@@ -40,6 +40,8 @@ const state = {
   readable: false,
   resumes: [],
   resumeId: "",
+  /** Your Skills tab, for the match score. */
+  skills: [],
   /** For "Mark this job as applied": to reuse a company and spot a job saved before. */
   companies: [],
   applications: [],
@@ -111,11 +113,13 @@ async function init() {
 }
 
 async function loadResumes() {
-  const [resumes, { [RESUME_PREF_KEY]: preferred }] = await Promise.all([
+  const [resumes, skills, { [RESUME_PREF_KEY]: preferred }] = await Promise.all([
     api.listResumes().catch(() => []),
+    api.listSkills().catch(() => []),
     chrome.storage.local.get(RESUME_PREF_KEY),
   ])
   state.resumes = resumes ?? []
+  state.skills = skills ?? []
   const fallback = state.resumes.find((r) => r.isDefault) ?? state.resumes[0]
   state.resumeId = state.resumes.some((r) => r.id === preferred) ? preferred : (fallback?.id ?? "")
   const select = $("resume-select")
@@ -256,10 +260,10 @@ function renderMatch() {
       ? "Its file is attached when the form asks for a resume."
       : "No file saved with this resume, so you'll attach it on the form yourself."
 
-  const result = resume ? matchResume(resume, state.job?.description) : undefined
+  const result = matchResume(resume, state.job?.description, state.skills)
   $("match").hidden = !result
   $("match-keywords").hidden = !result
-  $("match-empty").hidden = !resume || !!result
+  $("match-empty").hidden = (!resume && !state.skills.length) || !!result
   if (!result) {
     $("match-empty").textContent = state.job?.description
       ? "This job doesn't name skills we can compare."
@@ -267,7 +271,7 @@ function renderMatch() {
     return
   }
 
-  const { score, matched, missing } = result
+  const { score, matched, missing, years } = result
   const tone = score >= 75 ? "good" : score >= 50 ? "fair" : "low"
   $("match").dataset.tone = tone
   $("match-score").textContent = String(score)
@@ -278,10 +282,26 @@ function renderMatch() {
   $("match-title").textContent =
     tone === "good" ? "Strong match" : tone === "fair" ? "Partial match" : "Weak match"
   const total = matched.length + missing.length
-  $("match-detail").textContent = `Mentions ${matched.length} of ${total} keywords from this job`
+  const short = years.filter((y) => y.have && y.have < y.asked)
+  $("match-detail").textContent = [
+    `You have ${matched.length} of ${total} skills this job names`,
+    years.length ? `${short.length ? `${short.length} below` : "meets"} the years it asks` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const asked = new Map(years.map((y) => [y.name, y]))
+  const yearsNote = (y) =>
+    !y ? "" : !y.have ? `Asks ${y.asked}+ yrs; add your years in Skills` : `Asks ${y.asked}+ yrs; you have ${y.have}`
   $("keyword-list").replaceChildren(
-    ...missing.map((name) => el("li", { className: "missing", textContent: name, title: "Not on your resume" })),
-    ...matched.map((name) => el("li", { className: "matched", textContent: name, title: "On your resume" })),
+    ...missing.map((name) => el("li", { className: "missing", textContent: name, title: "Not on your resume or in your Skills" })),
+    ...matched.map((name) => {
+      const y = asked.get(name)
+      return el("li", {
+        className: y?.have && y.have < y.asked ? "short" : "matched",
+        textContent: y ? `${name} · ${y.asked}+ yrs` : name,
+        title: yearsNote(y) || "On your resume or in your Skills",
+      })
+    }),
   )
 }
 
@@ -709,11 +729,18 @@ function wireEvents() {
   })
 
   $("details-edit").addEventListener("click", openAutofillPage)
-  // Coming back from IamCandidate: details edited, applications added or removed.
+  // Coming back from IamCandidate: details edited, applications or skills added or removed.
   window.addEventListener("focus", () => {
     if (state.session && !state.running) {
       void loadDetails().catch(() => {})
       void loadApplications().then(renderApplied)
+      void api
+        .listSkills()
+        .then((skills) => {
+          state.skills = skills ?? []
+          renderMatch()
+        })
+        .catch(() => {})
     }
   })
 

@@ -145,6 +145,8 @@ export const api = {
   createApplication: (input) => send("POST", "/applications", input),
 
   listResumes: () => send("GET", "/resumes"),
+  /** Your Skills tab: `{ name, years }` count towards the resume match score. */
+  listSkills: () => send("GET", "/skills"),
   getDocument: (id) => send("GET", `/documents/${enc(id)}`),
   /** `{ url, expiresIn }`: a short-lived link to the stored file. */
   getDocumentDownloadUrl: (id) => send("GET", `/documents/${enc(id)}/download-url`),

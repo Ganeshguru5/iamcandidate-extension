@@ -1,7 +1,9 @@
 /**
- * How well a resume covers a job description, by keywords: the skills and
- * tools the posting names (from the list below, plus your resume's own
- * skills), and which of them your resume mentions.
+ * How well you cover a job description, by keywords: the skills and tools
+ * the posting names (from the list below, plus your resume's skills and the
+ * skills in your IamCandidate Skills tab), and which of them you have, on
+ * your resume or in your Skills. When the posting asks for "3+ years of
+ * React", your Skills' years for React count too.
  *
  * Runs in the extension (not injected), so it can import and be imported.
  */
@@ -108,19 +110,43 @@ export function resumeText(resume) {
   return parts.filter(Boolean).join(" \n ").toLowerCase()
 }
 
+const NUMBER_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 }
+const YEARS = /\b(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*(?:(?:-|–|to)\s*\d{1,2}\s*)?\+?\s*(?:years?|yrs?)\b/g
+
+/** The most years the job asks for with a skill: "3+ years of React", "React (5 yrs)". 0 when it doesn't say. */
+function yearsAsked(job, terms) {
+  let most = 0
+  // Within a sentence or bullet, the years and the skill sit close together.
+  // A full stop ends a sentence; the one in "node.js" doesn't.
+  for (const sentence of job.split(/\.(?=\s|$)|[\n•;]+/)) {
+    const where = terms.flatMap((term) => [...sentence.matchAll(termPattern(term))].map((m) => m.index))
+    if (!where.length) continue
+    for (const m of sentence.matchAll(YEARS)) {
+      const years = NUMBER_WORDS[m[1]] ?? Number(m[1])
+      if (years > 0 && where.some((at) => Math.abs(at - m.index) <= 60)) most = Math.max(most, years)
+    }
+  }
+  return most
+}
+
 /**
- * `{ score, matched: [name], missing: [name] }` for `resume` against a job
- * description, or undefined when the description names no keywords.
+ * `{ score, matched, missing, years }` against a job description, or
+ * undefined when the description names no keywords. `skills` are your
+ * IamCandidate Skills (`{ name, years }`; 0 years means not set). `matched`
+ * and `missing` are names; `years` is `[{ name, asked, have }]` for the
+ * matched skills the job asks a number of years for. A skill you have with
+ * fewer years than asked counts in proportion; one without years counts in
+ * full.
  */
-export function matchResume(resume, description) {
+export function matchResume(resume, description, skills = []) {
   const job = String(description ?? "").toLowerCase()
-  if (!resume || job.length < 40) return undefined
+  if ((!resume && !skills.length) || job.length < 40) return undefined
 
   const candidates = new Map()
   for (const [name, ...terms] of SKILLS) candidates.set(name.toLowerCase(), { name, terms })
   // Your own skills count too, when the posting names them.
-  for (const skill of resume.skills ?? []) {
-    const name = String(skill).trim()
+  for (const skill of [...(resume?.skills ?? []), ...skills.map((s) => s.name)]) {
+    const name = String(skill ?? "").trim()
     if (name.length > 1 && name.length < 40 && !candidates.has(name.toLowerCase())) {
       candidates.set(name.toLowerCase(), { name, terms: [name] })
     }
@@ -133,9 +159,24 @@ export function matchResume(resume, description) {
     .slice(0, 15)
   if (!wanted.length) return undefined
 
-  const text = resumeText(resume)
+  const text = resume ? resumeText(resume) : ""
+  const mine = skills.map((s) => ({ name: String(s.name ?? "").trim().toLowerCase(), years: Number(s.years) || 0 }))
   const matched = []
   const missing = []
-  for (const skill of wanted) (countIn(text, skill.terms) ? matched : missing).push(skill.name)
-  return { score: Math.round((matched.length / wanted.length) * 100), matched, missing }
+  const years = []
+  let points = 0
+  for (const skill of wanted) {
+    // Your Skills entry for it: named like it, or one of its spellings ("ReactJS" for React).
+    const own = mine.filter((s) => s.name === skill.name.toLowerCase() || skill.terms.some((t) => t.toLowerCase() === s.name))
+    if (!own.length && !countIn(text, skill.terms)) {
+      missing.push(skill.name)
+      continue
+    }
+    matched.push(skill.name)
+    const asked = yearsAsked(job, skill.terms)
+    const have = Math.max(0, ...own.map((s) => s.years))
+    if (asked) years.push({ name: skill.name, asked, have })
+    points += asked && have ? Math.min(1, have / asked) : 1
+  }
+  return { score: Math.round((points / wanted.length) * 100), matched, missing, years }
 }

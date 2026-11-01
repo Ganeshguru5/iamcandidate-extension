@@ -245,6 +245,12 @@ body {
   color: var(--ok);
 }
 
+/* You have it, with fewer years than the job asks. */
+.keywords li.short {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
 .keywords li.missing {
   background: var(--warn-bg);
   color: var(--warn);
