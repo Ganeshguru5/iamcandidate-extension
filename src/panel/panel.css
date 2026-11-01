@@ -245,6 +245,26 @@ body {
   color: var(--ok);
 }
 
+/* The job's overall experience against your total years. */
+.match-experience {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.match-experience[data-tone="short"] {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.match-experience[data-tone="unknown"] {
+  background: transparent;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+}
+
 /* You have it, with fewer years than the job asks. */
 .keywords li.short {
   background: var(--warn-bg);

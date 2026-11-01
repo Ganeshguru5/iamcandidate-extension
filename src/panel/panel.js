@@ -2,7 +2,7 @@ import { api, ApiError } from "../lib/api.js"
 import { fillPage, focusField } from "../lib/autofill.js"
 import { WORK_MODES } from "../lib/constants.js"
 import { extractPage } from "../lib/extract.js"
-import { matchResume } from "../lib/match.js"
+import { matchResume, totalYears } from "../lib/match.js"
 import { LEARN_KEY, loadFillData } from "../lib/profile.js"
 import { getReport, reportKey, saveReport } from "../lib/report.js"
 import { RESUME_PREF_KEY, resumeFile } from "../lib/resume-file.js"
@@ -152,6 +152,8 @@ async function loadDetails() {
   state.details = details
   state.answers = answers
   renderDetails()
+  // Your total years feed the match.
+  renderMatch()
 }
 
 /* ------------------------------------------------------------------ */
@@ -260,9 +262,10 @@ function renderMatch() {
       ? "Its file is attached when the form asks for a resume."
       : "No file saved with this resume, so you'll attach it on the form yourself."
 
-  const result = matchResume(resume, state.job?.description, state.skills)
+  const result = matchResume(resume, state.job?.description, state.skills, totalYears(state.details))
   $("match").hidden = !result
   $("match-keywords").hidden = !result
+  $("match-experience").hidden = !result?.experience
   $("match-empty").hidden = (!resume && !state.skills.length) || !!result
   if (!result) {
     $("match-empty").textContent = state.job?.description
@@ -271,7 +274,17 @@ function renderMatch() {
     return
   }
 
-  const { score, matched, missing, years } = result
+  const { score, matched, missing, years, experience } = result
+  // Overall experience: "5+ years of experience" against your total.
+  const line = $("match-experience")
+  if (experience) {
+    const { asked, have } = experience
+    line.dataset.tone = !have ? "unknown" : have >= asked ? "met" : "short"
+    line.replaceChildren(
+      el("span", { className: "strong", textContent: `Experience: asks ${asked}+ yrs` }),
+      ` · ${!have ? "add your total years on the Autofill page" : `you have ${have} (${have >= asked ? "meets it" : `${Math.round((asked - have) * 10) / 10} short`})`}`,
+    )
+  }
   const tone = score >= 75 ? "good" : score >= 50 ? "fair" : "low"
   $("match").dataset.tone = tone
   $("match-score").textContent = String(score)
@@ -773,6 +786,7 @@ function wireEvents() {
       const saved = changes[AUTOFILL_KEY].newValue
       state.details = saved?.userId === userKey() ? (saved.details ?? {}) : {}
       renderDetails()
+      renderMatch()
     }
   })
 }

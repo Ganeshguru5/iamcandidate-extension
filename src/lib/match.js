@@ -130,15 +130,67 @@ function yearsAsked(job, terms) {
 }
 
 /**
- * `{ score, matched, missing, years }` against a job description, or
+ * The overall experience a job asks for, in years: the most a line like
+ * "5+ years of experience" or "3-5 years of professional experience" names.
+ * 0 when it doesn't say.
+ */
+export function experienceAsked(description) {
+  const job = String(description ?? "").toLowerCase()
+  let most = 0
+  for (const m of job.matchAll(YEARS)) {
+    // "years of (relevant / total / professional / industry / hands-on) experience", or "experience: 5+ years".
+    const after = job.slice(m.index + m[0].length, m.index + m[0].length + 45)
+    const before = job.slice(Math.max(0, m.index - 30), m.index)
+    if (/^\s*(?:of\s+)?(?:[\w-]+\s+){0,3}?experience\b/.test(after) || /experience\s*(?:required)?\s*[:-]?\s*(?:of\s+)?(?:at least\s+|minimum\s+|min\.?\s+)?$/.test(before)) {
+      const years = NUMBER_WORDS[m[1]] ?? Number(m[1])
+      if (years > 0 && years <= 30) most = Math.max(most, years)
+    }
+  }
+  return most
+}
+
+/**
+ * Your total years from your autofill details: "Years of experience" when
+ * it's filled in, otherwise added up from your work history (overlaps
+ * counted once). 0 when neither says.
+ */
+export function totalYears(details) {
+  const stated = Number.parseFloat(String(details?.experienceYears ?? "").replace(/[^\d.]/g, ""))
+  if (stated > 0) return stated
+  const now = new Date()
+  const monthOf = (yearMonth) => {
+    const [, y, m] = String(yearMonth ?? "").match(/^(\d{4})-(\d{2})$/) ?? []
+    return y ? Number(y) * 12 + Number(m) - 1 : undefined
+  }
+  const spans = (Array.isArray(details?.experience) ? details.experience : [])
+    .map((job) => [monthOf(job.startDate), job.current ? now.getFullYear() * 12 + now.getMonth() : monthOf(job.endDate)])
+    .filter(([start, end]) => start !== undefined && end !== undefined && end >= start)
+    .sort((a, b) => a[0] - b[0])
+  let months = 0
+  let open
+  for (const [start, end] of spans) {
+    if (open && start <= open[1]) open[1] = Math.max(open[1], end)
+    else {
+      if (open) months += open[1] - open[0]
+      open = [start, end]
+    }
+  }
+  if (open) months += open[1] - open[0]
+  return Math.round((months / 12) * 10) / 10
+}
+
+/**
+ * `{ score, matched, missing, years, experience }` against a job description, or
  * undefined when the description names no keywords. `skills` are your
  * IamCandidate Skills (`{ name, years }`; 0 years means not set). `matched`
  * and `missing` are names; `years` is `[{ name, asked, have }]` for the
  * matched skills the job asks a number of years for. A skill you have with
  * fewer years than asked counts in proportion; one without years counts in
- * full.
+ * full. `experience` is `{ asked, have }` when the job asks for overall
+ * years, `have` being `myYears` (your total, 0 when unknown); it counts as
+ * one more requirement once your total is known.
  */
-export function matchResume(resume, description, skills = []) {
+export function matchResume(resume, description, skills = [], myYears = 0) {
   const job = String(description ?? "").toLowerCase()
   if ((!resume && !skills.length) || job.length < 40) return undefined
 
@@ -178,5 +230,12 @@ export function matchResume(resume, description, skills = []) {
     if (asked) years.push({ name: skill.name, asked, have })
     points += asked && have ? Math.min(1, have / asked) : 1
   }
-  return { score: Math.round((points / wanted.length) * 100), matched, missing, years }
+  const asked = experienceAsked(job)
+  const experience = asked ? { asked, have: myYears } : undefined
+  let total = wanted.length
+  if (experience?.have) {
+    points += Math.min(1, experience.have / asked)
+    total += 1
+  }
+  return { score: Math.round((points / total) * 100), matched, missing, years, experience }
 }
