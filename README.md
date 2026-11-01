@@ -21,7 +21,9 @@ someone's LinkedIn profile.
 - **Autofill side panel:** on the Autofill tab, click **Open autofill panel**. The panel stays
   beside the page and follows the tab you're on. It shows the job (read from the posting, or
   remembered from the posting you opened before its application form), a **resume match** score
-  for the resume you pick (which of the skills the job names your resume mentions), and an
+  for the resume you pick (which of the skills the job names you have, on that resume or in your
+  IamCandidate Skills tab; "3+ years of React" is checked against each skill's years, and "5+ years
+  of experience" against your total years from Career → Autofill), and an
   **Autofill this page** button. Autofill attaches your resume's saved file to the form's resume
   upload, types your details (name, email, phone, location, links, current title and company,
   experience, notice period, salary, summary, cover letter) into matching empty fields, picks the
